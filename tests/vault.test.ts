@@ -8,6 +8,7 @@ import {
   lockFolder,
   parseKeyFile,
   serializeKeyFile,
+  uniqueZipName,
   unlockVault,
   type LockInput,
 } from "../src/lib/vault.ts"
@@ -132,6 +133,39 @@ test("진행률이 0에서 1까지 올라간다", async () => {
   const seen2: number[] = []
   await unlockVault(vault, key, (p) => seen2.push(p))
   assert.equal(seen2.at(-1), 1)
+})
+
+test("zip 이름: 윈도우 금지 글자·예약어·끝 점은 안전하게 바뀐다", () => {
+  const used = new Set<string>()
+  assert.equal(uniqueZipName("f/a:b.txt", used), "f/a_b.txt")
+  assert.equal(uniqueZipName('f/q?"<>|*.txt', used), "f/q______.txt")
+  assert.equal(uniqueZipName("f/CON", used), "f/_CON")
+  assert.equal(uniqueZipName("f/nul.txt", used), "f/_nul.txt")
+  assert.equal(uniqueZipName("f/끝점.", used), "f/끝점_")
+  assert.equal(uniqueZipName("f/보통 파일.txt", used), "f/보통 파일.txt")
+  assert.equal(uniqueZipName("f/console.txt", used), "f/console.txt")
+})
+
+test("zip 이름: 겹치면(대소문자만 달라도) 번호를 붙인다", () => {
+  const used = new Set<string>()
+  assert.equal(uniqueZipName("f/Readme.md", used), "f/Readme.md")
+  assert.equal(uniqueZipName("f/README.md", used), "f/README (2).md")
+  assert.equal(uniqueZipName("f/a:b", used), "f/a_b")
+  assert.equal(uniqueZipName("f/a_b", used), "f/a_b (2)")
+  assert.equal(uniqueZipName("f/a?b", used), "f/a_b (3)")
+})
+
+test("맥·리눅스식 이름(콜론, 대소문자만 다름)도 잠그고 열 수 있다", async () => {
+  const input: LockInput[] = [
+    { path: "f/a:b.txt", blob: new Blob([enc.encode("1")]), mtime: Date.now() },
+    { path: "f/A.txt", blob: new Blob([enc.encode("2")]), mtime: Date.now() },
+    { path: "f/a.txt", blob: new Blob([enc.encode("3")]), mtime: Date.now() },
+  ]
+  const { vault, key } = await lockFolder(input, "f")
+  const result = await unlockVault(vault, key)
+  const unzipped = unzipSync(await bytesOf(result.zip))
+  assert.deepEqual(Object.keys(unzipped).sort(), ["f/A.txt", "f/a (2).txt", "f/a_b.txt"])
+  assert.equal(new TextDecoder().decode(unzipped["f/a (2).txt"]), "3")
 })
 
 test("암호화된 청크 두 개의 순서를 바꾸면 열리지 않는다 (corrupt)", async () => {

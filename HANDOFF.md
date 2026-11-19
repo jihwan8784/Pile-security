@@ -40,7 +40,8 @@
 - [x] 보안 점검 (2026-11-19)
   - `next.config.ts`에 CSP·보안 헤더 추가. 핵심은 `connect-src 'self'`(열쇠를 외부로 보낼 수 없음), `frame-ancestors 'none'`(다른 사이트에 끼워 넣기 차단). CSP 켠 상태로 E2E 재통과
   - `shadcn`(CLI, 빌드 때 CSS만 씀)을 devDependencies로 이동 → `npm audit --omit=dev` 취약점 0
-  - 남은 낮은 위험(나중에): 매니페스트 안 파일 경로에 윈도우에서 못 쓰는 글자(`:` 등)·중복 경로 검사 없음. 매니페스트는 키로 인증되므로 키를 가진 사람만 만들 수 있음
+  - zip 이름 정리(`uniqueZipName`): 윈도우 금지 글자(`:` 등)→`_`, CON·NUL 등 예약어 앞에 `_`, 끝 점·공백→`_`, 겹치는 이름(대소문자만 달라도)은 ` (2)` 붙임. 거부하지 않고 바꾸는 이유: 맥·리눅스 폴더도 열 수 있게. 테스트 15개 통과
+  - Vercel 환경변수 `DATABASE_URL`(예전 게임용) 삭제 완료
 - [x] main에 합치기 → Vercel 자동 배포 (배포 결과 확인 필요)
 
 ## 다음에 이어서 하는 법
@@ -57,5 +58,5 @@ Claude Code에서는 "HANDOFF.md 읽고 이어서 해줘".
 
 ## 참고
 - 학교 PC C: 드라이브가 작다(57GB). 시작할 때 `Get-PSDrive C`로 여유 공간 먼저 확인. 부족하면 `npm cache clean --force`
-- Vercel 환경변수 `DATABASE_URL`(예전 게임용, DB 삭제됨)은 대시보드에서 지워야 함 (사용자가 직접)
+- 학교망에서 Node가 HTTPS 연결 실패(`fetch failed`)하면 `node --use-system-ca` 로 실행 (윈도우 인증서 저장소 사용)
 - 이 프로젝트의 Next.js는 학습 데이터와 다를 수 있음 → `node_modules/next/dist/docs/` 참고 (AGENTS.md)

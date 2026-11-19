@@ -171,10 +171,11 @@ export async function unlockVault(
   let doneChunks = 0
   let offset = HEADER_LEN + manifestLen
   onProgress?.(0)
+  const usedNames = new Set<string>()
 
   for (let fi = 0; fi < manifest.files.length; fi++) {
     const entry = manifest.files[fi]
-    const zf = new ZipPassThrough(entry.path)
+    const zf = new ZipPassThrough(uniqueZipName(entry.path, usedNames))
     zf.mtime = zipDate(entry.mtime)
     zip.add(zf)
 
@@ -296,6 +297,36 @@ function cleanPath(p: string): string | null {
   if (segs.some((s) => s === "" || s === "." || s === "..")) return null
   if (/^[a-zA-Z]:$/.test(segs[0])) return null
   return segs.join("/")
+}
+
+const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³])(\..*)?$/i
+
+/**
+ * zip 안에 넣을 이름을 윈도우에서도 안전하게 바꾼다.
+ * - 맥·리눅스에서는 합법인 이름(예: "a:b.txt")도 윈도우에서 풀면 오류가 나거나,
+ *   ":"는 NTFS 숨은 데이터 영역(ADS)에 써질 수 있다 → 금지 글자는 "_"로
+ * - CON, NUL 같은 장치 이름은 앞에 "_"를 붙이고, 끝의 점·공백은 윈도우가 지워 버리므로 "_"로
+ * - 바꾼 결과가 겹치면(대소문자만 다른 경우 포함) " (2)"를 붙여 덮어쓰기를 막는다
+ */
+export function uniqueZipName(path: string, used: Set<string>): string {
+  const safe = path
+    .split("/")
+    .map((seg) => {
+      let s = seg.replace(/[<>:"\\|?*\u0000-\u001f]/g, "_").replace(/[. ]+$/, (m) => "_".repeat(m.length))
+      if (WINDOWS_RESERVED.test(s)) s = `_${s}`
+      return s
+    })
+    .join("/")
+
+  let name = safe
+  for (let n = 2; used.has(name.toLowerCase()); n++) {
+    const slash = safe.lastIndexOf("/")
+    const dot = safe.lastIndexOf(".")
+    const cut = dot > slash + 1 ? dot : safe.length
+    name = `${safe.slice(0, cut)} (${n})${safe.slice(cut)}`
+  }
+  used.add(name.toLowerCase())
+  return name
 }
 
 /** zip 날짜 형식은 1980~2099년만 표현 가능 */
