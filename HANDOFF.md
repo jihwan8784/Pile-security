@@ -33,8 +33,9 @@
 - [x] 디자인: 강철 회색 `#eef1f4` / 잉크 `#17202a` / 놋쇠 `#9a6b12`, 글꼴 IBM Plex Sans KR (+ 키 지문만 IBM Plex Mono). 토큰은 `globals.css`
 - [x] layout.tsx 제목·`lang="ko"`
 - [x] `npm run lint` 통과
-- [ ] **`npm run build` 확인** ← 바로 다음 할 일. 지난번엔 학교 PC C: 디스크가 꽉 차서 빌드 도중 실패(코드 문제 아님). `tsc`에서 `LayoutProps` 오류가 나는 건 빌드 때 생성되는 타입이라 정상
-- [ ] 브라우저로 잠그기 → 열기 → 원본과 같은지 확인 (`npm run dev` 후 실제 폴더로). 화면 스크린샷 보고 디자인 다듬기
+- [x] `npm run build` 통과 (2026-11-19)
+- [x] Edge 자동 테스트(playwright-core)로 잠그기 → 열기 왕복 확인: 한글 이름·하위 폴더·빈 파일·정확히 1MB·2.5MB 파일 모두 원본과 SHA-256 동일, .vault 안에 원문·파일명 노출 없음, 틀린 키 거부, 콘솔 오류 없음
+  - **버그 수정**: 작업 중 탭 버튼을 모두 disabled로 하면 Base UI가 선택된 탭을 해제해서 잠근 뒤 결과 화면(열쇠 받기)이 안 보였음 → 탭을 제어 상태로 바꾸고 "다른" 탭만 막도록 수정
   - 주의: 열쇠를 안 받고 "다른 폴더 잠그기"를 누르면 `window.confirm` 창이 뜸 (브라우저 자동화 중엔 피할 것)
 - [ ] 리뷰·보안 점검 (code-review, claude-security)
 - [ ] main 푸시 → Vercel 자동 배포 확인

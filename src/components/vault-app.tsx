@@ -19,6 +19,7 @@ import {
 
 export function VaultApp() {
   const [busy, setBusy] = useState(false)
+  const [tab, setTab] = useState<"lock" | "unlock">("lock")
 
   return (
     <main className="mx-auto w-full max-w-[640px] px-4 pt-12 pb-16 sm:pt-20">
@@ -38,12 +39,13 @@ export function VaultApp() {
         </p>
       </header>
 
-      <Tabs defaultValue="lock">
+      {/* 작업 중에는 "다른" 탭만 막는다. 선택된 탭을 disabled로 만들면 Base UI가 선택을 해제해서 결과 화면이 사라진다 */}
+      <Tabs value={tab} onValueChange={(v) => !busy && (v === "lock" || v === "unlock") && setTab(v)}>
         <TabsList className="h-11! w-full sm:w-80">
-          <TabsTrigger value="lock" disabled={busy} className="text-[0.95rem]">
+          <TabsTrigger value="lock" disabled={busy && tab !== "lock"} className="text-[0.95rem]">
             <LockKeyhole aria-hidden /> 잠그기
           </TabsTrigger>
-          <TabsTrigger value="unlock" disabled={busy} className="text-[0.95rem]">
+          <TabsTrigger value="unlock" disabled={busy && tab !== "unlock"} className="text-[0.95rem]">
             <FolderOpen aria-hidden /> 열기
           </TabsTrigger>
         </TabsList>
