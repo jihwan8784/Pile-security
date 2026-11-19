@@ -37,8 +37,11 @@
 - [x] Edge 자동 테스트(playwright-core)로 잠그기 → 열기 왕복 확인: 한글 이름·하위 폴더·빈 파일·정확히 1MB·2.5MB 파일 모두 원본과 SHA-256 동일, .vault 안에 원문·파일명 노출 없음, 틀린 키 거부, 콘솔 오류 없음
   - **버그 수정**: 작업 중 탭 버튼을 모두 disabled로 하면 Base UI가 선택된 탭을 해제해서 잠근 뒤 결과 화면(열쇠 받기)이 안 보였음 → 탭을 제어 상태로 바꾸고 "다른" 탭만 막도록 수정
   - 주의: 열쇠를 안 받고 "다른 폴더 잠그기"를 누르면 `window.confirm` 창이 뜸 (브라우저 자동화 중엔 피할 것)
-- [ ] 리뷰·보안 점검 (code-review, claude-security)
-- [ ] main 푸시 → Vercel 자동 배포 확인
+- [x] 보안 점검 (2026-11-19)
+  - `next.config.ts`에 CSP·보안 헤더 추가. 핵심은 `connect-src 'self'`(열쇠를 외부로 보낼 수 없음), `frame-ancestors 'none'`(다른 사이트에 끼워 넣기 차단). CSP 켠 상태로 E2E 재통과
+  - `shadcn`(CLI, 빌드 때 CSS만 씀)을 devDependencies로 이동 → `npm audit --omit=dev` 취약점 0
+  - 남은 낮은 위험(나중에): 매니페스트 안 파일 경로에 윈도우에서 못 쓰는 글자(`:` 등)·중복 경로 검사 없음. 매니페스트는 키로 인증되므로 키를 가진 사람만 만들 수 있음
+- [x] main에 합치기 → Vercel 자동 배포 (배포 결과 확인 필요)
 
 ## 다음에 이어서 하는 법
 ```bash
