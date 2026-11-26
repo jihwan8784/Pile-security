@@ -219,7 +219,7 @@ function limitMethods(f: Features, out: Method[], cautions: string[]) {
     return
   }
 
-  if (toInf && /\(\s*1\s*\+\s*[^)]*\/\s*[a-z]\s*\)\s*\^/.test(s)) {
+  if (toInf && /\(\s*1\s*\+\s*\(?[^()]*\/\s*[a-z]\s*\)?\s*\)\s*\^/.test(s)) {
     out.push({
       name: "e 의 정의 이용",
       why: "(1 + □/n)^n 꼴이 보입니다.",
@@ -424,7 +424,7 @@ function derivMethods(f: Features, out: Method[]) {
       formula: String.raw`\left(f^{-1}\right)'(b)=\frac{1}{f'(a)}\quad\left(f(a)=b\right)`,
     })
   }
-  if (re("V\\s*\\^\\s*\\(?\\s*[^)\\s]*V|\\)\\s*\\^\\s*\\(?\\s*[^)]*V", v).test(s) && !/e\s*\^/.test(s)) {
+  if (re("V\\s*\\^\\s*(\\([^()]*V[^()]*\\)|V\\b)|\\)\\s*\\^\\s*(\\([^()]*V[^()]*\\)|V\\b)", v).test(s) && !/e\s*\^/.test(s)) {
     out.push({
       name: "로그 미분법",
       why: "밑과 지수에 모두 변수가 있습니다. (예: xˣ)",
@@ -739,6 +739,10 @@ export function analyze(input: string): Analysis {
     integralMethods(f, methods, cautions)
   } else if (isApp) {
     topic = f.words.tangent || f.words.extremum || f.words.concavity ? "미분" : "정적분의 활용"
+  } else if (/^\s*y\s*=/.test(normalized) && /x/.test(normalized)) {
+    // y = f(x) 만 쓴 경우: 미분 문제로 본다
+    topic = "미분"
+    derivMethods(f, methods)
   } else if (f.parametric || f.implicit) {
     topic = "미분"
     derivMethods(f, methods)

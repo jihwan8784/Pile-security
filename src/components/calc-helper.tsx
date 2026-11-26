@@ -3,11 +3,19 @@
 import "mathlive/static.css"
 import { useEffect, useRef, useState } from "react"
 import type { MathfieldElement } from "mathlive"
-import { Lightbulb, Sparkles, TriangleAlert } from "lucide-react"
+import { CircleCheck, Lightbulb, LoaderCircle, Sparkles, TriangleAlert } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { EXAMPLES, PURPOSES, analyzeWith, type Analysis, type Purpose } from "@/lib/calc2"
+import type { SolveResult } from "@/lib/solve"
+import type { SolveRequest, SolveResponse } from "@/lib/solve.worker"
 
 type MathLive = typeof import("mathlive")
+
+/** 풀이 상태: 계산 전 / 계산 중 / 끝 */
+type Solving = { state: "idle" } | { state: "loading" } | { state: "done"; result: SolveResult }
+
+/** 계산이 이 시간보다 오래 걸리면 멈춘다 (처음에는 계산 엔진 내려받는 시간 포함) */
+const SOLVE_TIMEOUT_MS = 15_000
 
 /**
  * 기호 버튼: [버튼에 보일 글자, 넣을 LaTeX]
@@ -32,21 +40,32 @@ const SYMBOLS: [string, string][] = [
   ["→", String.raw`\to`],
 ]
 
-export function CalcHelper() {
+/** @param active 이 탭이 지금 보이는지. 처음 보일 때 MathLive 를 불러온다 */
+export function CalcHelper({ active }: { active: boolean }) {
   const fieldRef = useRef<MathfieldElement>(null)
   const [ml, setMl] = useState<MathLive | null>(null)
   const [latex, setLatex] = useState("")
   const [purposes, setPurposes] = useState<Purpose[]>([])
   const [result, setResult] = useState<Analysis | null>(null)
+  const [solving, setSolving] = useState<Solving>({ state: "idle" })
+  const workerRef = useRef<Worker | null>(null)
+  const requestId = useRef(0)
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // 최신 값을 이벤트 처리기에서 쓰기 위한 참조 (Enter 를 누른 순간의 목적 버튼 상태)
+  // 탭을 떠나 컴포넌트가 사라지면 워커도 끝낸다
+  useEffect(() => () => workerRef.current?.terminate(), [])
+
+  // 최신 값을 이벤트 처리기에서 쓰기 위한 참조 (Enter 를 누른 순간의 목적 버튼 상태, 최신 run 함수)
   const purposesRef = useRef(purposes)
+  const runRef = useRef<(value: string, ps: Purpose[]) => void>(() => {})
   useEffect(() => {
     purposesRef.current = purposes
-  }, [purposes])
+    runRef.current = run
+  })
 
-  // MathLive 는 이 탭에서만 필요하므로 화면이 뜬 뒤에 따로 불러온다 (잠그기/열기 화면을 느리게 하지 않음)
+  // MathLive(약 800KB)는 이 탭을 처음 열 때 불러온다 (탭은 숨겨진 채로 미리 그려지므로 active 로 판단)
   useEffect(() => {
+    if (!active || ml) return
     let alive = true
     import("mathlive").then((mod) => {
       // 글꼴은 static.css 가 이미 불러오고, 소리 파일은 쓰지 않음 → 외부·추가 요청 없음
@@ -57,7 +76,7 @@ export function CalcHelper() {
     return () => {
       alive = false
     }
-  }, [])
+  }, [active, ml])
 
   // 입력창 이벤트 연결: 쓸 때마다 값 저장, Enter(=change) 를 누르면 분석
   useEffect(() => {
@@ -67,7 +86,7 @@ export function CalcHelper() {
     // 띄어쓰기(예: "cos x")를 눌러도 칸 밖으로 튀어 나가지 않고 작은 공백만 들어가게
     mf.mathModeSpace = String.raw`\,`
     const onInput = () => setLatex(mf.value)
-    const onChange = () => run(mf.value, purposesRef.current)
+    const onChange = () => runRef.current(mf.value, purposesRef.current)
     mf.addEventListener("input", onInput)
     mf.addEventListener("change", onChange)
     return () => {
@@ -77,7 +96,41 @@ export function CalcHelper() {
   }, [ml])
 
   function run(value: string, ps: Purpose[]) {
-    setResult(value.trim() || ps.length ? analyzeWith(value, ps) : null)
+    const analysis = value.trim() || ps.length ? analyzeWith(value, ps) : null
+    setResult(analysis)
+    solveInWorker(value, analysis)
+  }
+
+  /** 답과 풀이 과정은 웹 워커에서 계산 (오래 걸려도 화면이 멈추지 않게) */
+  function solveInWorker(value: string, analysis: Analysis | null) {
+    const id = ++requestId.current
+    if (timer.current) clearTimeout(timer.current)
+    if (!value.trim() || !analysis) {
+      setSolving({ state: "idle" })
+      return
+    }
+    setSolving({ state: "loading" })
+    let worker = workerRef.current
+    if (!worker) {
+      worker = new Worker(new URL("../lib/solve.worker.ts", import.meta.url), { type: "module" })
+      workerRef.current = worker
+    }
+    const finish = (r: SolveResult) => {
+      if (id !== requestId.current) return // 더 새로운 요청이 있으면 무시
+      if (timer.current) clearTimeout(timer.current)
+      setSolving({ state: "done", result: r })
+    }
+    worker.onmessage = (e: MessageEvent<SolveResponse>) => {
+      if (e.data.id === id) finish(e.data.result)
+    }
+    worker.onerror = () => finish({ ok: false, reason: "계산 엔진을 불러오지 못했습니다. 새로고침해 보세요." })
+    timer.current = setTimeout(() => {
+      // 너무 오래 걸리면 워커를 끝내고, 다음 요청 때 새로 만든다
+      worker?.terminate()
+      workerRef.current = null
+      finish({ ok: false, reason: "계산이 너무 오래 걸려서 멈췄습니다. 식을 더 간단히 하거나 접근법을 참고해 직접 풀어 보세요." })
+    }, SOLVE_TIMEOUT_MS)
+    worker.postMessage({ id, latex: value, methods: analysis.methods.map((m) => m.name), topic: analysis.topic } satisfies SolveRequest)
   }
 
   function insert(template: string) {
@@ -111,6 +164,7 @@ export function CalcHelper() {
     setLatex("")
     setPurposes([])
     setResult(null)
+    solveInWorker("", null)
   }
 
   return (
@@ -201,6 +255,7 @@ export function CalcHelper() {
         </div>
       </section>
 
+      {solving.state !== "idle" && <SolutionView solving={solving} ml={ml} />}
       {result && <Result result={result} ml={ml} />}
     </div>
   )
@@ -258,13 +313,88 @@ function Result({ result, ml }: { result: Analysis; ml: MathLive | null }) {
   )
 }
 
-/** 공식 한 줄을 교과서처럼 그려 준다. (이 앱에 미리 적어 둔 공식만 넣으므로 innerHTML 이 안전함) */
-function Formula({ latex, ml }: { latex: string; ml: MathLive | null }) {
-  if (!ml) return <code className="block font-mono text-sm">{latex}</code>
+// 수식을 HTML 로 그릴 때 위험할 수 있는 명령 (링크·스타일·임의 HTML)
+const UNSAFE_TEX = /\\(href|url|html\w*|class|cssId|style|data\w*|tooltip|mathtip|texttip|includegraphics|unicode)\b/i
+const UNSAFE_HTML = /<(a|img|script|iframe|object|embed|svg|math|style|link|form|input)\b|\son\w+\s*=|javascript:/i
+
+/** LaTeX → HTML. 풀이 결과에는 사용자가 쓴 식이 섞이므로, 위험한 명령이 있으면 그리지 않고 글자로 보여 준다 */
+function safeMarkup(ml: MathLive, latex: string): string | null {
+  if (UNSAFE_TEX.test(latex)) return null
+  const html = ml.convertLatexToMarkup(latex, { defaultMode: "math" })
+  return UNSAFE_HTML.test(html) ? null : html
+}
+
+/** 공식 한 줄을 교과서처럼 그려 준다 */
+function Formula({ latex, ml, className = "text-[1.1rem]" }: { latex: string; ml: MathLive | null; className?: string }) {
+  const html = ml ? safeMarkup(ml, latex) : null
+  if (!html) return <code className="block font-mono text-sm break-all">{latex}</code>
+  return <div className={`${className} whitespace-nowrap`} dangerouslySetInnerHTML={{ __html: html }} />
+}
+
+/** 답 + 풀이 과정 + 검산 */
+function SolutionView({ solving, ml }: { solving: Solving; ml: MathLive | null }) {
+  if (solving.state === "loading") {
+    return (
+      <p role="status" className="flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-4 text-[0.95rem] text-muted-foreground">
+        <LoaderCircle className="size-4 animate-spin" aria-hidden />
+        답과 풀이를 계산하는 중… (처음에는 계산 엔진을 내려받느라 몇 초 걸려요)
+      </p>
+    )
+  }
+  if (solving.state !== "done") return null
+  const r = solving.result
+  if (!r.ok) {
+    return (
+      <p role="status" className="rounded-lg border border-dashed border-border px-4 py-3 text-[0.95rem] leading-6 text-muted-foreground">
+        {r.reason}
+      </p>
+    )
+  }
+  const s = r.solution
   return (
-    <div
-      className="text-[1.1rem] whitespace-nowrap"
-      dangerouslySetInnerHTML={{ __html: ml.convertLatexToMarkup(latex, { defaultMode: "math" }) }}
-    />
+    <section aria-label="답과 풀이" aria-live="polite" className="overflow-hidden rounded-lg border border-foreground/15 bg-card">
+      <div className="border-b border-border bg-brass-soft/60 px-4 py-4 sm:px-5">
+        <h2 className="text-sm font-bold text-[#6b4a0c]">답 · {s.title}</h2>
+        <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1 overflow-x-auto">
+          <Formula latex={s.answer} ml={ml} className="text-[1.5rem]" />
+          {s.approx && <span className="text-sm text-muted-foreground tabular-nums">{s.approx}</span>}
+        </div>
+      </div>
+
+      <div className="px-4 py-4 sm:px-5">
+        <h3 className="mb-3 text-[1.05rem] font-bold">풀이 과정</h3>
+        <ol className="space-y-4">
+          {s.steps.map((st, i) => (
+            <li key={i} className="grid grid-cols-[1.75rem_1fr] gap-x-2">
+              <span className="mt-0.5 flex size-6 items-center justify-center rounded-full bg-muted text-xs font-bold tabular-nums" aria-hidden>
+                {i + 1}
+              </span>
+              <div className="min-w-0">
+                <p className="text-[0.95rem] leading-7">{st.text}</p>
+                {st.latex && (
+                  <div className="mt-1.5 overflow-x-auto rounded-md bg-muted/70 px-3 py-2.5">
+                    <Formula latex={st.latex} ml={ml} />
+                  </div>
+                )}
+              </div>
+            </li>
+          ))}
+        </ol>
+
+        {s.check && (
+          <div className="mt-5 rounded-md bg-ok-soft px-3.5 py-3 text-ok">
+            <p className="flex items-center gap-2 text-[0.95rem] font-medium">
+              <CircleCheck className="size-4 shrink-0" aria-hidden />
+              {s.check.text}
+            </p>
+            {s.check.latex && (
+              <div className="mt-1.5 overflow-x-auto">
+                <Formula latex={s.check.latex} ml={ml} className="text-[1rem]" />
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </section>
   )
 }

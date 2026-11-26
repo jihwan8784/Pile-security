@@ -61,7 +61,7 @@ export function VaultApp() {
           <UnlockPanel onBusy={setBusy} />
         </TabsContent>
         <TabsContent value="calc" keepMounted className="pt-6">
-          <CalcHelper />
+          <CalcHelper active={tab === "calc"} />
         </TabsContent>
       </Tabs>
 
