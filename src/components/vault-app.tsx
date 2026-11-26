@@ -1,8 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState, type ReactNode } from "react"
-import { Check, FolderLock, FolderOpen, KeyRound, LockKeyhole, Sigma, TriangleAlert } from "lucide-react"
-import { CalcHelper } from "@/components/calc-helper"
+import { Check, FolderLock, FolderOpen, KeyRound, LockKeyhole, TriangleAlert } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -20,7 +19,7 @@ import {
 
 export function VaultApp() {
   const [busy, setBusy] = useState(false)
-  const [tab, setTab] = useState<"lock" | "unlock" | "calc">("lock")
+  const [tab, setTab] = useState<"lock" | "unlock">("lock")
 
   return (
     <main className="mx-auto w-full max-w-[640px] px-4 pt-12 pb-16 sm:pt-20">
@@ -41,16 +40,13 @@ export function VaultApp() {
       </header>
 
       {/* 작업 중에는 "다른" 탭만 막는다. 선택된 탭을 disabled로 만들면 Base UI가 선택을 해제해서 결과 화면이 사라진다 */}
-      <Tabs value={tab} onValueChange={(v) => !busy && (v === "lock" || v === "unlock" || v === "calc") && setTab(v)}>
-        <TabsList className="h-11! w-full sm:w-[27rem]">
+      <Tabs value={tab} onValueChange={(v) => !busy && (v === "lock" || v === "unlock") && setTab(v)}>
+        <TabsList className="h-11! w-full sm:w-80">
           <TabsTrigger value="lock" disabled={busy && tab !== "lock"} className="text-[0.95rem]">
             <LockKeyhole aria-hidden /> 잠그기
           </TabsTrigger>
           <TabsTrigger value="unlock" disabled={busy && tab !== "unlock"} className="text-[0.95rem]">
             <FolderOpen aria-hidden /> 열기
-          </TabsTrigger>
-          <TabsTrigger value="calc" disabled={busy && tab !== "calc"} className="text-[0.95rem]">
-            <Sigma aria-hidden /> 미적분2
           </TabsTrigger>
         </TabsList>
         {/* keepMounted: 탭을 바꿔도 받지 않은 열쇠가 사라지지 않게 */}
@@ -59,9 +55,6 @@ export function VaultApp() {
         </TabsContent>
         <TabsContent value="unlock" keepMounted className="pt-6">
           <UnlockPanel onBusy={setBusy} />
-        </TabsContent>
-        <TabsContent value="calc" keepMounted className="pt-6">
-          <CalcHelper active={tab === "calc"} />
         </TabsContent>
       </Tabs>
 
