@@ -17,7 +17,7 @@ export type Method = {
   why: string
   /** 풀이 순서 */
   steps: string[]
-  /** 핵심 공식 (있으면) */
+  /** 핵심 공식 (있으면). LaTeX, 여러 줄이면 \n 으로 구분 */
   formula?: string
 }
 
@@ -36,28 +36,40 @@ export type Analysis = {
 export function normalize(input: string): string {
   let s = input.normalize("NFC")
 
-  // LaTeX: 띄어쓰기 명령, \left \right 제거
-  s = s.replace(/\\(left|right|displaystyle|limits)\b/g, "").replace(/\\[,;:! ]|\\quad|\\qquad/g, " ")
-  // \frac{a}{b} → ((a)/(b))  (중첩된 분수도 안쪽부터 반복해서 바꿈)
-  for (let i = 0; i < 10; i++) {
-    const next = s.replace(/\\[dt]?frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}/g, "(($1)/($2))")
+  // LaTeX: 띄어쓰기 명령, \left \right 제거, 수식 입력창(MathLive)이 쓰는 명령 정리
+  s = s
+    .replace(/\\(left|right|mleft|mright|displaystyle|limits|big|Big)\b/g, "")
+    .replace(/\\[,;:! ]|\\quad|\\qquad/g, " ")
+    .replace(/\\placeholder\s*(\[[^\]]*\])?\s*\{[^{}]*\}/g, "")
+    .replace(/\\exponentialE\b/g, "e")
+    .replace(/\\differentialD\b/g, "d")
+    .replace(/\\(lvert|rvert|vert|mid)\b/g, "|")
+    .replace(/\\mathrm\s*\{\s*d\s*\}/g, "d")
+    .replace(/\\(operatorname|mathrm|mathit)\s*\{([a-zA-Z]+)\}/g, "$2")
+    .replace(/\\text\s*\{([^{}]*)\}/g, " $1 ")
+  // 안쪽 중괄호부터 차례로 바꿈: x^{..} → x^(..), \sqrt{..} → √(..), \frac{a}{b} → ((a)/(b))
+  for (let i = 0; i < 20; i++) {
+    const next = s
+      .replace(/([\^_])\s*\{([^{}]*)\}/g, "$1($2)")
+      .replace(/\\sqrt\s*\[([^\]]*)\]\s*\{([^{}]*)\}/g, "(($2)^(1/($1)))")
+      .replace(/\\sqrt\s*\{([^{}]*)\}/g, "√($1)")
+      .replace(/\\[dt]?frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}/g, "(($1)/($2))")
+      .replace(/\\[dt]?frac\s*(\d)\s*(\d)/g, "($1/$2)") // \frac12
     if (next === s) break
     s = next
   }
   s = s
-    .replace(/\\sqrt\s*\[([^\]]*)\]\s*\{([^{}]*)\}/g, "(($2)^(1/($1)))")
     .replace(/\\sqrt/g, "√")
     .replace(/\\int/g, "∫")
     .replace(/\\lim/g, "lim")
     .replace(/\\sum/g, "Σ")
     .replace(/\\infty/g, "∞")
-    .replace(/\\(to|rightarrow|longrightarrow)\b/g, "→")
-    .replace(/\\pi\b/g, "π")
-    .replace(/\\theta\b/g, "θ")
-    .replace(/\\(cdot|times)\b/g, "*")
-    .replace(/\\mathrm\s*\{\s*d\s*\}/g, "d")
-    .replace(/\\(operatorname|mathrm)\s*\{([a-z]+)\}/g, "$2")
-    .replace(/\\([a-zA-Z]+)/g, "$1") // 나머지 \sin \ln 등은 이름만 남김
+    // 명령 이름 바로 뒤에 숫자·글자가 붙어 와도(\to0, \pi\sin) 알아보도록 (?![a-zA-Z]) 로 끝을 판단
+    .replace(/\\(to|rightarrow|longrightarrow)(?![a-zA-Z])/g, "→")
+    .replace(/\\pi(?![a-zA-Z])/g, "π ")
+    .replace(/\\theta(?![a-zA-Z])/g, "θ ")
+    .replace(/\\(cdot|times)(?![a-zA-Z])/g, "*")
+    .replace(/\\([a-zA-Z]+)/g, "$1 ") // 나머지 \sin \ln 등은 이름만 남기고 뒤에 띄어쓰기
     .replace(/[{]/g, "(")
     .replace(/[}]/g, ")")
 
@@ -79,10 +91,24 @@ export function normalize(input: string): string {
     .replace(/\bexp\s*\(/gi, "e^(")
     .replace(/[A-Z]/g, (c) => c.toLowerCase())
 
+  // 글자 하나짜리 괄호 풀기: e^(x) → e^x, ((1)/(n)) → (1/n)  (sin(x) 처럼 함수 이름 뒤 괄호는 둠)
+  for (let i = 0; i < 10; i++) {
+    // 뒤에 글자가 바로 오면 붙지 않게 띄어쓰기 하나를 남긴다 (^(π)sin → ^π sin)
+    const next = s.replace(/(^|[^a-z])\(\s*([a-z0-9.∞π]+)\s*\)/g, (m, pre: string, atom: string, at: number, all: string) =>
+      pre + atom + (/[a-z√∫]/.test(all[at + m.length] ?? "") ? " " : ""),
+    )
+    if (next === s) break
+    s = next
+  }
+
   return s.replace(/\s+/g, " ").trim()
 }
 
 // ───────────────────────── 2. 특징 찾기 ─────────────────────────
+
+/** 적분 구간 ∫_a^b : 끝값 하나는 (괄호 묶음) | 숫자 | π | 문자 하나 | ∞ */
+const BOUND = String.raw`(\([^()]*\)|-?[\d.]+\s*π?|-?π|-?[a-z]|∞)`
+const BOUNDS = new RegExp(String.raw`∫\s*_\s*${BOUND}\s*\^\s*${BOUND}`)
 
 type Features = ReturnType<typeof features>
 
@@ -95,9 +121,10 @@ function features(s: string) {
   const limTo = limMatch?.[2]?.replace(/\s/g, "") ?? null
 
   // 적분 구간: ∫_(a)^(b) 또는 ∫_a^b
-  const bounds = s.match(/∫\s*_\s*\(?\s*([^\s()^]+)\s*\)?\s*\^\s*\(?\s*([^\s()]+?)\s*\)?(?=[\s(a-zπ√\d|])/)
-  const lo = bounds?.[1] ?? null
-  const hi = bounds?.[2] ?? null
+  const bounds = s.match(BOUNDS)
+  const unwrap = (b?: string) => b?.replace(/^\((.*)\)$/, "$1").replace(/\s/g, "") ?? null
+  const lo = unwrap(bounds?.[1])
+  const hi = unwrap(bounds?.[2])
 
   // 미분·적분 변수: d/dx, dx, dt …
   const dVar = s.match(/d\s*\/\s*d([a-zθ])/)?.[1] ?? s.match(/(?:^|[\s)*])d([a-zθ])\s*$/)?.[1] ?? null
@@ -187,7 +214,7 @@ function limitMethods(f: Features, out: Method[], cautions: string[]) {
         "k = 1 ~ n 이면 x 의 범위는 0 ~ 1 입니다. (a + (b−a)k/n 꼴이면 a ~ b)",
         "Σ 안의 식을 f(x) 로 바꿔서 정적분을 계산합니다.",
       ],
-      formula: "lim(n→∞) Σ(k=1~n) f(a + (b−a)k/n)·(b−a)/n = ∫ₐᵇ f(x) dx",
+      formula: String.raw`\lim_{n\to\infty}\sum_{k=1}^{n} f\left(a+\frac{(b-a)k}{n}\right)\frac{b-a}{n}` + "\n" + String.raw`=\int_a^b f(x)\,dx`,
     })
     return
   }
@@ -197,7 +224,7 @@ function limitMethods(f: Features, out: Method[], cautions: string[]) {
       name: "e 의 정의 이용",
       why: "(1 + □/n)^n 꼴이 보입니다.",
       steps: ["지수를 □ 의 역수 × (나머지) 로 쪼갭니다.", "기본 극한 lim(1 + 1/n)^n = e 꼴로 맞춥니다."],
-      formula: "lim(n→∞)(1 + 1/n)ⁿ = e,  lim(n→∞)(1 + a/n)ⁿ = eᵃ",
+      formula: String.raw`\lim_{n\to\infty}\left(1+\frac{1}{n}\right)^{n}=e,\quad \lim_{n\to\infty}\left(1+\frac{a}{n}\right)^{n}=e^{a}`,
     })
   }
 
@@ -210,7 +237,7 @@ function limitMethods(f: Features, out: Method[], cautions: string[]) {
         "|r| < 1 이면 rⁿ → 0, r = 1 이면 1, r > 1 이면 발산, r ≤ −1 이면 진동입니다.",
         "밑에 x 같은 문자가 있으면 |x| < 1, x = 1, x = −1, |x| > 1 로 범위를 나눠 따로 구합니다.",
       ],
-      formula: "lim(n→∞) rⁿ = 0 (|r|<1), 1 (r=1)",
+      formula: String.raw`\lim_{n\to\infty} r^{n}=0\ \ (|r|<1),\quad \lim_{n\to\infty} r^{n}=1\ \ (r=1)`,
     })
   }
 
@@ -223,7 +250,7 @@ function limitMethods(f: Features, out: Method[], cautions: string[]) {
           "sin(□) 아래에 같은 □ 가 오도록 분모·분자에 같은 수를 곱하고 나눕니다.",
           "sin□/□ → 1, tan□/□ → 1 을 적용합니다.",
         ],
-        formula: "lim(x→0) sin x / x = 1,  lim(x→0) tan x / x = 1,  lim(x→0) sin ax / bx = a/b",
+        formula: String.raw`\lim_{x\to0}\frac{\sin x}{x}=1,\quad \lim_{x\to0}\frac{\tan x}{x}=1` + "\n" + String.raw`\lim_{x\to0}\frac{\sin ax}{bx}=\frac{a}{b}`,
       })
     }
     if (/1\s*-\s*cos|cos[^-]*-\s*1/.test(s)) {
@@ -231,7 +258,7 @@ function limitMethods(f: Features, out: Method[], cautions: string[]) {
         name: "1 − cos x 는 켤레식 곱하기",
         why: "1 − cos x 꼴이 있습니다.",
         steps: ["분모·분자에 (1 + cos x) 를 곱합니다.", "1 − cos²x = sin²x 로 바꾼 뒤 sin x / x → 1 을 씁니다."],
-        formula: "lim(x→0) (1 − cos x)/x² = 1/2",
+        formula: String.raw`\lim_{x\to0}\frac{1-\cos x}{x^{2}}=\frac{1}{2}`,
       })
     }
     if (/e\s*\^/.test(s) && /-\s*1/.test(s)) {
@@ -239,7 +266,7 @@ function limitMethods(f: Features, out: Method[], cautions: string[]) {
         name: "지수함수 기본 극한",
         why: "x → 0 이고 eˣ − 1 꼴이 있습니다.",
         steps: ["지수 부분과 분모가 같은 꼴이 되도록 곱하고 나눕니다.", "(e□ − 1)/□ → 1 을 적용합니다."],
-        formula: "lim(x→0) (eˣ − 1)/x = 1,  lim(x→0) (aˣ − 1)/x = ln a",
+        formula: String.raw`\lim_{x\to0}\frac{e^{x}-1}{x}=1,\quad \lim_{x\to0}\frac{a^{x}-1}{x}=\ln a`,
       })
     }
     if (/ln|log/.test(s)) {
@@ -247,7 +274,7 @@ function limitMethods(f: Features, out: Method[], cautions: string[]) {
         name: "로그함수 기본 극한",
         why: "x → 0 이고 ln(1 + □) 꼴이 있습니다.",
         steps: ["ln(1 + □) 아래에 □ 가 오도록 맞춥니다.", "ln(1 + □)/□ → 1 을 적용합니다."],
-        formula: "lim(x→0) ln(1 + x)/x = 1",
+        formula: String.raw`\lim_{x\to0}\frac{\ln(1+x)}{x}=1`,
       })
     }
     if (/\(\s*1\s*\+[^)]*\)\s*\^\s*\(?\s*1\s*\//.test(s)) {
@@ -255,7 +282,7 @@ function limitMethods(f: Features, out: Method[], cautions: string[]) {
         name: "e 의 정의 이용",
         why: "(1 + x)^(1/x) 꼴이 있습니다.",
         steps: ["괄호 안의 □ 와 지수의 1/□ 가 짝이 되도록 지수를 정리합니다."],
-        formula: "lim(x→0) (1 + x)^(1/x) = e",
+        formula: String.raw`\lim_{x\to0}(1+x)^{\frac{1}{x}}=e`,
       })
     }
   }
@@ -319,7 +346,7 @@ function seriesMethods(f: Features, out: Method[]) {
       name: "등비급수",
       why: "Σ 안에 rⁿ 꼴이 있습니다.",
       steps: ["첫째항 a 와 공비 r 을 찾습니다.", "|r| < 1 인지 확인합니다. (수렴 조건)", "합은 a/(1 − r) 입니다."],
-      formula: "Σ(n=1~∞) a·rⁿ⁻¹ = a/(1 − r)  (−1 < r < 1)",
+      formula: String.raw`\sum_{n=1}^{\infty} ar^{n-1}=\frac{a}{1-r}\quad(-1<r<1)`,
     })
   }
   // 분모가 n(n+1), (2n-1)(2n+1) 처럼 두 일차식의 곱
@@ -367,7 +394,7 @@ function derivMethods(f: Features, out: Method[]) {
         "적분 안에 x 가 섞여 있으면 x 를 적분 밖으로 꺼낸 다음 곱의 미분을 합니다.",
         "x = a (위끝 = 아래끝) 를 대입하면 적분값이 0 이 되는 것도 함께 씁니다.",
       ],
-      formula: "d/dx ∫ₐ^g(x) f(t) dt = f(g(x))·g'(x)",
+      formula: String.raw`\frac{d}{dx}\int_a^{g(x)} f(t)\,dt=f(g(x))\,g'(x)`,
     })
   }
   if (f.parametric) {
@@ -375,7 +402,7 @@ function derivMethods(f: Features, out: Method[]) {
       name: "매개변수로 나타낸 함수의 미분",
       why: "x 와 y 가 모두 t 에 대한 식입니다.",
       steps: ["dx/dt, dy/dt 를 각각 구합니다.", "dy/dx = (dy/dt)/(dx/dt) 입니다. (dx/dt ≠ 0)", "특정 점이면 그 점의 t 값을 먼저 찾아 대입합니다."],
-      formula: "dy/dx = (dy/dt) / (dx/dt)",
+      formula: String.raw`\frac{dy}{dx}=\dfrac{\ \frac{dy}{dt}\ }{\ \frac{dx}{dt}\ }`,
     })
   }
   if (f.implicit && !f.parametric) {
@@ -394,7 +421,7 @@ function derivMethods(f: Features, out: Method[]) {
       name: "역함수의 미분",
       why: "역함수가 등장합니다.",
       steps: ["g = f⁻¹ 이고 g(b) = a 이면 f(a) = b 인 a 를 먼저 찾습니다.", "g'(b) = 1 / f'(a) 를 계산합니다."],
-      formula: "(f⁻¹)'(b) = 1 / f'(a),  f(a) = b",
+      formula: String.raw`\left(f^{-1}\right)'(b)=\frac{1}{f'(a)}\quad\left(f(a)=b\right)`,
     })
   }
   if (re("V\\s*\\^\\s*\\(?\\s*[^)\\s]*V|\\)\\s*\\^\\s*\\(?\\s*[^)]*V", v).test(s) && !/e\s*\^/.test(s)) {
@@ -412,7 +439,7 @@ function derivMethods(f: Features, out: Method[]) {
       name: "몫의 미분",
       why: "분모에 변수가 있는 분수함수입니다.",
       steps: ["분자를 f, 분모를 g 로 놓습니다.", "(f/g)' = (f'g − fg')/g² 를 씁니다.", "분자가 상수면 (1/g)' = −g'/g² 가 더 빠릅니다."],
-      formula: "(f/g)' = (f'g − fg') / g²",
+      formula: String.raw`\left(\frac{f}{g}\right)'=\frac{f'g-fg'}{g^{2}}`,
     })
   }
   if (polyTimesOther(f) || /(e\s*\^[^*]*\*?\s*(sin|cos))|((sin|cos)[^*]*\*?\s*e\s*\^)/.test(body) || /(sin|cos)[^+-]*\*?\s*(ln)/.test(body)) {
@@ -420,7 +447,7 @@ function derivMethods(f: Features, out: Method[]) {
       name: "곱의 미분",
       why: "서로 다른 종류의 함수가 곱해져 있습니다.",
       steps: ["앞 함수를 f, 뒤 함수를 g 로 놓습니다.", "(fg)' = f'g + fg' 를 씁니다."],
-      formula: "(fg)' = f'g + fg'",
+      formula: String.raw`(fg)'=f'g+fg'`,
     })
   }
   if (hasInnerFunction(f)) {
@@ -428,14 +455,14 @@ function derivMethods(f: Features, out: Method[]) {
       name: "합성함수의 미분 (연쇄법칙)",
       why: "함수 안에 또 다른 식이 들어 있습니다. (예: sin(x²), e^(3x), ln(x²+1))",
       steps: ["바깥 함수와 안쪽 식을 나눕니다.", "바깥 함수를 미분하고(안쪽은 그대로), 안쪽 식의 미분을 곱합니다."],
-      formula: "{f(g(x))}' = f'(g(x))·g'(x)",
+      formula: String.raw`\left\{f(g(x))\right\}'=f'(g(x))\,g'(x)`,
     })
   }
 
   const basics: string[] = []
-  if (f.exp) basics.push("(eˣ)' = eˣ,  (aˣ)' = aˣ ln a")
-  if (f.ln) basics.push("(ln x)' = 1/x,  (ln|f(x)|)' = f'(x)/f(x),  (logₐ x)' = 1/(x ln a)")
-  if (f.trig) basics.push("(sin x)' = cos x,  (cos x)' = −sin x,  (tan x)' = sec²x,  (sec x)' = sec x tan x")
+  if (f.exp) basics.push(String.raw`(e^{x})'=e^{x},\quad (a^{x})'=a^{x}\ln a`)
+  if (f.ln) basics.push(String.raw`(\ln x)'=\frac{1}{x},\quad (\ln|f(x)|)'=\frac{f'(x)}{f(x)},\quad (\log_a x)'=\frac{1}{x\ln a}`)
+  if (f.trig) basics.push(String.raw`(\sin x)'=\cos x,\quad (\cos x)'=-\sin x,\quad (\tan x)'=\sec^{2}x`)
   if (basics.length) {
     out.push({
       name: "기본 도함수 공식",
@@ -450,7 +477,7 @@ function derivMethods(f: Features, out: Method[]) {
       name: "항별로 기본 공식 적용",
       why: "합·차로 이루어진 간단한 식입니다.",
       steps: ["항마다 따로 미분합니다. (상수배는 앞으로)", "xⁿ 은 nxⁿ⁻¹ 로 미분합니다."],
-      formula: "(xⁿ)' = nxⁿ⁻¹,  {f ± g}' = f' ± g',  {cf}' = cf'",
+      formula: String.raw`(x^{n})'=nx^{n-1},\quad \{f\pm g\}'=f'\pm g',\quad \{cf\}'=cf'`,
     })
   }
 
@@ -465,7 +492,7 @@ function derivMethods(f: Features, out: Method[]) {
 
 function integralMethods(f: Features, out: Method[], cautions: string[]) {
   const { s, v } = f
-  const body = s.replace(/∫\s*_\s*\(?[^\s()^]+\)?\s*\^\s*\(?[^\s()]+\)?/, "∫")
+  const body = s.replace(BOUNDS, "∫")
 
   if (f.defFunc && !f.deriv) {
     out.push({
@@ -498,7 +525,7 @@ function integralMethods(f: Features, out: Method[], cautions: string[]) {
       name: "f'(x)/f(x) 꼴 → ln|f(x)|",
       why: "분자가 분모를 미분한 꼴(또는 그 상수배)입니다.",
       steps: ["분모를 미분해서 분자와 비교합니다.", "모자란 상수는 앞으로 빼서 맞춥니다.", "∫ f'(x)/f(x) dx = ln|f(x)| + C"],
-      formula: "∫ f'(x)/f(x) dx = ln|f(x)| + C,  ∫ tan x dx = −ln|cos x| + C",
+      formula: String.raw`\int\frac{f'(x)}{f(x)}\,dx=\ln|f(x)|+C` + "\n" + String.raw`\int\tan x\,dx=-\ln|\cos x|+C`,
     })
   }
 
@@ -521,7 +548,7 @@ function integralMethods(f: Features, out: Method[], cautions: string[]) {
         "dt = (안쪽 식)' dx 로 dx 를 바꿉니다. 모자란 상수는 곱하고 나눠 맞춥니다.",
         f.definite ? "정적분이면 위끝·아래끝도 t 값으로 바꿉니다. (다시 x 로 돌리지 않아도 됨)" : "t 에 대해 적분한 뒤 t 를 다시 x 식으로 바꿉니다.",
       ],
-      formula: "∫ f(g(x))·g'(x) dx = ∫ f(t) dt   (t = g(x))",
+      formula: String.raw`\int f(g(x))\,g'(x)\,dx=\int f(t)\,dt\quad(t=g(x))`,
     })
   }
 
@@ -548,7 +575,7 @@ function integralMethods(f: Features, out: Method[], cautions: string[]) {
             "∫ f g' dx = f g − ∫ f' g dx 를 씁니다.",
             highDeg ? "다항식 차수가 2 이상이면 부분적분을 여러 번 하거나 표(도표적분)를 쓰면 빠릅니다." : "남은 적분은 기본 공식으로 계산합니다.",
           ],
-      formula: "∫ f(x)g'(x) dx = f(x)g(x) − ∫ f'(x)g(x) dx",
+      formula: String.raw`\int f(x)g'(x)\,dx=f(x)g(x)-\int f'(x)g(x)\,dx`,
     })
   }
 
@@ -557,7 +584,7 @@ function integralMethods(f: Features, out: Method[], cautions: string[]) {
       name: "배각(반각) 공식으로 차수 낮추기",
       why: "sin²x 또는 cos²x 가 있습니다.",
       steps: ["sin²x = (1 − cos 2x)/2, cos²x = (1 + cos 2x)/2 로 바꿉니다.", "cos 2x 는 ∫ cos 2x dx = (1/2) sin 2x 로 적분합니다."],
-      formula: "sin²x = (1 − cos 2x)/2,  cos²x = (1 + cos 2x)/2",
+      formula: String.raw`\sin^{2}x=\frac{1-\cos 2x}{2},\quad \cos^{2}x=\frac{1+\cos 2x}{2}`,
     })
   }
   if (/tan\s*\^\s*\(?\s*2/.test(body)) {
@@ -608,9 +635,9 @@ function integralMethods(f: Features, out: Method[], cautions: string[]) {
   }
 
   if (out.length === 0) {
-    const basics = ["∫ xⁿ dx = xⁿ⁺¹/(n+1) + C  (n ≠ −1)", "∫ 1/x dx = ln|x| + C"]
-    if (f.exp) basics.push("∫ eˣ dx = eˣ + C,  ∫ aˣ dx = aˣ/ln a + C")
-    if (f.trig) basics.push("∫ sin x dx = −cos x + C,  ∫ cos x dx = sin x + C,  ∫ sec²x dx = tan x + C")
+    const basics = [String.raw`\int x^{n}\,dx=\frac{x^{n+1}}{n+1}+C\ \ (n\ne-1)`, String.raw`\int\frac{1}{x}\,dx=\ln|x|+C`]
+    if (f.exp) basics.push(String.raw`\int e^{x}\,dx=e^{x}+C,\quad \int a^{x}\,dx=\frac{a^{x}}{\ln a}+C`)
+    if (f.trig) basics.push(String.raw`\int\sin x\,dx=-\cos x+C,\quad \int\cos x\,dx=\sin x+C`)
     out.push({
       name: "식 정리 후 기본 적분 공식",
       why: "특별한 꼴이 보이지 않습니다. 식을 항별로 나눠 기본 공식을 씁니다.",
@@ -631,7 +658,7 @@ function applicationMethods(f: Features, out: Method[]) {
         "구간마다 위에 있는 함수에서 아래 함수를 뺀 식을 적분합니다. (∫|f − g| dx)",
         "역함수가 나오면 y = x 대칭을 이용해 넓이를 바꿔 계산할 수 있습니다.",
       ],
-      formula: "S = ∫ₐᵇ |f(x) − g(x)| dx",
+      formula: String.raw`S=\int_a^b|f(x)-g(x)|\,dx`,
     })
   }
   if (w.volume) {
@@ -639,7 +666,7 @@ function applicationMethods(f: Features, out: Method[]) {
       name: "부피: 단면의 넓이를 적분",
       why: "입체의 부피를 구하는 문제입니다.",
       steps: ["x 에서 자른 단면의 넓이 S(x) 를 구합니다.", "V = ∫ₐᵇ S(x) dx 를 계산합니다."],
-      formula: "V = ∫ₐᵇ S(x) dx",
+      formula: String.raw`V=\int_a^b S(x)\,dx`,
     })
   }
   if (w.motion) {
@@ -650,7 +677,7 @@ function applicationMethods(f: Features, out: Method[]) {
         "위치 변화량 = ∫ v(t) dt, 움직인 거리 = ∫ |v(t)| dt 입니다. (방향이 바뀌는 시각에서 구간을 나눔)",
         "평면 운동이면 속도 (dx/dt, dy/dt), 속력 √((dx/dt)² + (dy/dt)²) 입니다.",
       ],
-      formula: "거리 = ∫ₐᵇ √((dx/dt)² + (dy/dt)²) dt",
+      formula: String.raw`\text{거리}=\int_a^b\sqrt{\left(\frac{dx}{dt}\right)^{2}+\left(\frac{dy}{dt}\right)^{2}}\,dt`,
     })
   }
   if (w.length) {
@@ -658,7 +685,7 @@ function applicationMethods(f: Features, out: Method[]) {
       name: "곡선의 길이",
       why: "곡선의 길이를 구하는 문제입니다.",
       steps: ["y = f(x) 이면 ∫ √(1 + {f'(x)}²) dx", "매개변수면 ∫ √((dx/dt)² + (dy/dt)²) dt", "근호 안이 완전제곱식이 되도록 정리되는 경우가 많습니다."],
-      formula: "L = ∫ₐᵇ √(1 + {f'(x)}²) dx",
+      formula: String.raw`L=\int_a^b\sqrt{1+\{f'(x)\}^{2}}\,dx`,
     })
   }
   if (w.tangent) {
@@ -733,17 +760,26 @@ export function analyze(input: string): Analysis {
   return { normalized, topic, methods: unique, cautions }
 }
 
-/** 화면에 보여 줄 예시 */
-export const EXAMPLES: { label: string; input: string }[] = [
-  { label: "삼각함수 극한", input: "lim x→0 sin(3x)/x" },
-  { label: "부분적분", input: "∫ x e^x dx" },
-  { label: "치환적분", input: "∫ x e^(x^2) dx" },
-  { label: "f'/f 꼴", input: "∫ 2x/(x^2+1) dx" },
-  { label: "합성함수 미분", input: "d/dx ln(x^2+1)" },
-  { label: "음함수", input: "x^2 + y^2 = 25 일 때 dy/dx" },
-  { label: "매개변수", input: "x = t^2 + 1, y = t^3 일 때 dy/dx" },
-  { label: "구분구적법", input: "lim n→∞ Σ (1/n)(k/n)^2" },
-  { label: "반각 공식", input: "∫_0^π sin^2 x dx" },
-  { label: "등비급수", input: "Σ (1/3)^n" },
-  { label: "넓이", input: "곡선 y = e^x 와 x축, x = 0, x = 1 로 둘러싸인 넓이" },
+/** 목적 버튼: 식과 함께 "무엇을 구하는지" 알려 주면 정적분의 활용·미분의 활용 접근법이 나온다 */
+export const PURPOSES = ["넓이", "부피", "속도·거리", "곡선의 길이", "접선", "극값", "변곡점"] as const
+export type Purpose = (typeof PURPOSES)[number]
+
+/** 수식(LaTeX)과 목적을 합쳐 분석한다 */
+export function analyzeWith(latex: string, purposes: readonly Purpose[] = []): Analysis {
+  return analyze([latex, ...purposes].join(" "))
+}
+
+/** 화면에 보여 줄 예시 (수식 입력창에 넣을 LaTeX) */
+export const EXAMPLES: { label: string; latex: string; purposes?: Purpose[] }[] = [
+  { label: "삼각함수 극한", latex: String.raw`\lim_{x\to0}\frac{\sin3x}{x}` },
+  { label: "부분적분", latex: String.raw`\int xe^{x}\,dx` },
+  { label: "치환적분", latex: String.raw`\int xe^{x^2}\,dx` },
+  { label: "f'/f 꼴", latex: String.raw`\int\frac{2x}{x^2+1}\,dx` },
+  { label: "합성함수 미분", latex: String.raw`\frac{d}{dx}\ln\left(x^2+1\right)` },
+  { label: "음함수", latex: String.raw`x^2+y^2=25` },
+  { label: "매개변수", latex: String.raw`x=t^2+1,\;y=t^3` },
+  { label: "구분구적법", latex: String.raw`\lim_{n\to\infty}\sum_{k=1}^{n}\frac{1}{n}\left(\frac{k}{n}\right)^2` },
+  { label: "반각 공식", latex: String.raw`\int_0^{\pi}\sin^2x\,dx` },
+  { label: "등비급수", latex: String.raw`\sum_{n=1}^{\infty}\left(\frac{1}{3}\right)^{n}` },
+  { label: "넓이", latex: String.raw`y=e^{x},\;x=0,\;x=1`, purposes: ["넓이"] },
 ]

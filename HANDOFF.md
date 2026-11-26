@@ -53,8 +53,15 @@
   - 미분: 합성함수, 곱·몫, 음함수, 매개변수, 역함수, 로그 미분법, 정적분으로 정의된 함수, 이계도함수
   - 적분: 치환, 부분적분(로-다-삼-지, eˣsin x 순환), f'/f, 배각 공식, 부분분수, 절댓값, 대칭 구간, 원의 넓이 해석
   - 활용(글로 쓴 문제): 넓이, 부피, 속도·거리, 곡선 길이, 접선, 극값, 변곡점
-- `src/components/calc-helper.tsx`: 입력창(Enter=분석), 기호 버튼(누르면 커서 위치에 삽입, 포커스 안 뺏음), 예시 11개, 결과 카드
-- 테스트 `tests/calc2.test.ts` 10개 → `npm test` 전체 25개 통과
+- `src/components/calc-helper.tsx`: **MathLive 수식 입력창**(`<math-field>`, 치는 대로 교과서처럼 보임), 기호 버튼(빈칸 #? 이 있는 LaTeX 템플릿 삽입), 목적 버튼(넓이·접선 등), 예시 11개, 결과 카드
+  - MathLive(약 850KB)는 미적분2 탭에서 `import("mathlive")`로 따로 불러옴 → 잠그기/열기 화면은 느려지지 않음
+  - 글꼴은 `mathlive/static.css`로 번들(font-src 'self'), `fontsDirectory = null`, `soundsDirectory = null` → **외부 요청 0개** (CSP 그대로)
+  - 결과 공식은 LaTeX(`formula`, 여러 줄은 \n)로 적어 두고 `convertLatexToMarkup`으로 그림 (앱이 적은 공식만 넣으므로 innerHTML 안전)
+  - `mathModeSpace = "\,"`: 띄어쓰기를 눌러도 분수 칸 밖으로 튀어 나가지 않게
+  - 메뉴(≡) 버튼은 CSS로 숨김(`globals.css`), 휴대폰에서는 수학 가상 키보드가 자동으로 뜸
+  - 자동 테스트 주의: 입력창을 클릭한 직후 바로 타자를 치면 글자가 빠짐(MathLive가 포커스를 조금 늦게 옮김) → 클릭 후 300ms 기다리기
+- `normalize`는 MathLive가 만드는 LaTeX(중첩 중괄호, `\exponentialE`, `\differentialD`, `\mleft`, `\placeholder`)도 처리
+- 테스트 `tests/calc2.test.ts` 12개 → `npm test` 전체 27개 통과
 - 새 패턴을 추가할 때: calc2.ts의 해당 주제 함수에 `out.push({ name, why, steps, formula })`를 넣고 테스트에 예시 한 줄 추가
 - 한계: 모양으로만 판단하므로 복잡한 식은 틀린 추천이 나올 수 있음 → 발견하면 테스트에 넣고 패턴 수정
 

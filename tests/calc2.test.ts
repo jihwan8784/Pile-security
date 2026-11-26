@@ -1,7 +1,7 @@
 // 실행: npm test  (Node 내장 테스트 도구 node:test 사용)
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { EXAMPLES, analyze, normalize } from "../src/lib/calc2.ts"
+import { EXAMPLES, analyze, analyzeWith, normalize } from "../src/lib/calc2.ts"
 
 /** 접근법 이름 목록 */
 const names = (input: string) => analyze(input).methods.map((m) => m.name)
@@ -9,8 +9,8 @@ const first = (input: string) => names(input)[0] ?? ""
 const includes = (input: string, part: string) => names(input).some((n) => n.includes(part))
 
 test("LaTeX 와 특수 기호를 한 가지 표기로 정리", () => {
-  assert.equal(normalize("\\int_{0}^{1} x e^{x} \\, dx"), "∫_(0)^(1) x e^(x) dx")
-  assert.equal(normalize("\\lim_{x \\to 0} \\frac{\\sin 3x}{x}"), "lim_(x → 0) ((sin 3x)/(x))")
+  assert.equal(normalize("\\int_{0}^{1} x e^{x} \\, dx"), "∫_0^1 x e^x dx")
+  assert.equal(normalize("\\lim_{x \\to 0} \\frac{\\sin 3x}{x}"), "lim_(x → 0) ((sin 3x)/x)")
   assert.equal(normalize("x² − 1 ÷ x"), "x^2 - 1 / x")
   assert.equal(normalize("lim n->inf"), "lim n→∞")
 })
@@ -93,11 +93,46 @@ test("정적분의 활용 (글로 쓴 문제)", () => {
 })
 
 test("예시는 모두 접근법이 하나 이상 나옴", () => {
-  for (const ex of EXAMPLES) {
-    const a = analyze(ex.input)
-    assert.notEqual(a.topic, "알 수 없음", ex.input)
-    assert.ok(a.methods.length > 0, ex.input)
+  const expected: Record<string, string> = {
+    "삼각함수 극한": "삼각함수 기본 극한",
+    부분적분: "부분적분",
+    치환적분: "치환적분",
+    "f'/f 꼴": "f'(x)/f(x)",
+    "합성함수 미분": "합성함수",
+    음함수: "음함수",
+    매개변수: "매개변수",
+    구분구적법: "구분구적법",
+    "반각 공식": "배각",
+    등비급수: "등비급수",
+    넓이: "넓이",
   }
+  for (const ex of EXAMPLES) {
+    const a = analyzeWith(ex.latex, ex.purposes)
+    assert.notEqual(a.topic, "알 수 없음", ex.label)
+    assert.ok(a.methods.some((m) => m.name.includes(expected[ex.label])), `${ex.label}: ${a.methods.map((m) => m.name)}`)
+  }
+})
+
+test("수식 입력창(MathLive)이 만드는 LaTeX 도 인식", () => {
+  // 중첩 중괄호, \exponentialE, \differentialD, \mleft \mright
+  assert.equal(first("\\int x\\exponentialE^{x^2}\\,\\differentialD x"), "치환적분")
+  assert.equal(first("\\int\\frac{\\ln x}{x}\\,\\mathrm{d}x"), "치환적분")
+  assert.equal(first("\\lim_{x\\to0}\\frac{e^{2x}-1}{x}"), "지수함수 기본 극한")
+  assert.equal(first("\\lim_{x\\to0}\\frac{\\sin\\mleft(3x\\mright)}{x}"), "삼각함수 기본 극한")
+  assert.ok(includes("\\frac{d}{dx}\\sin\\left(x^2\\right)", "합성함수"))
+  assert.ok(includes("\\frac{d}{dx}\\left(x^2e^{x}\\right)", "곱의 미분"))
+  assert.ok(includes("\\int_{-1}^{1}\\left(x^3+x^2\\right)dx", "대칭 구간"))
+  assert.ok(includes("\\sum_{n=1}^{\\infty}\\frac{1}{n\\left(n+1\\right)}", "부분분수"))
+  assert.ok(includes("\\int\\frac{1}{\\left(x-1\\right)\\left(x+2\\right)}dx", "부분분수"))
+  assert.ok(includes("\\int_0^2\\sqrt{4-x^2}dx", "원의 넓이"))
+  // dy/dx 를 분수로 오해하지 않음
+  assert.ok(!includes("x^2+y^2=25,\\ \\frac{dy}{dx}", "몫의 미분"))
+})
+
+test("목적 버튼과 함께 분석", () => {
+  assert.equal(analyzeWith(String.raw`y=x^2,\;y=x`, ["넓이"]).topic, "정적분의 활용")
+  assert.ok(analyzeWith(String.raw`y=e^{x}`, ["접선"]).methods.some((m) => m.name.includes("접선")))
+  assert.ok(analyzeWith(String.raw`v(t)=t^2-4t`, ["속도·거리"]).methods.some((m) => m.name.includes("속도")))
 })
 
 test("빈 입력·관계없는 입력", () => {

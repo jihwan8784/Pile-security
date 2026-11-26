@@ -176,3 +176,19 @@
 @media (prefers-reduced-motion: reduce) {
   .key-tag { animation: none; }
 }
+
+/* 미적분2 탭: MathLive 수식 입력창 */
+math-field.calc-field {
+  --caret-color: var(--brass);
+  --selection-background-color: var(--brass-soft);
+  --contains-highlight-background-color: transparent;
+  outline: none;
+}
+math-field.calc-field:focus-within {
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 30%, transparent);
+}
+/* 오른쪽 메뉴(≡) 버튼은 숨기고, 가상 키보드 버튼만 남김 */
+math-field.calc-field::part(menu-toggle) {
+  display: none;
+}
