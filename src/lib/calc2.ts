@@ -786,4 +786,22 @@ export const EXAMPLES: { label: string; latex: string; purposes?: Purpose[] }[] 
   { label: "반각 공식", latex: String.raw`\int_0^{\pi}\sin^2x\,dx` },
   { label: "등비급수", latex: String.raw`\sum_{n=1}^{\infty}\left(\frac{1}{3}\right)^{n}` },
   { label: "넓이", latex: String.raw`y=e^{x},\;x=0,\;x=1`, purposes: ["넓이"] },
+  { label: "두 곡선 사이 넓이", latex: String.raw`y=x^2,\;y=x`, purposes: ["넓이"] },
+  { label: "부피", latex: String.raw`S(x)=x^2,\;x=0,\;x=3`, purposes: ["부피"] },
+  { label: "움직인 거리", latex: String.raw`v(t)=t^2-4t,\;t=0,\;t=5`, purposes: ["속도·거리"] },
+  { label: "곡선의 길이", latex: String.raw`y=\frac{2}{3}x^{\frac{3}{2}},\;x=0,\;x=3`, purposes: ["곡선의 길이"] },
+  { label: "접선", latex: String.raw`y=e^{x},\;x=0`, purposes: ["접선"] },
+  { label: "극값", latex: String.raw`y=x^3-3x`, purposes: ["극값"] },
+  { label: "변곡점", latex: String.raw`y=x^3-3x^2`, purposes: ["변곡점"] },
 ]
+
+/** 목적 버튼을 골랐을 때 보여 줄 입력 방법 */
+export const PURPOSE_HINTS: Record<Purpose, string> = {
+  넓이: "y=x^2, y=x  (두 곡선)  ·  y=e^x, x=0, x=1  (곡선과 x축, 세로선)",
+  부피: "S(x)=x^2, x=0, x=3  (단면의 넓이와 구간)",
+  "속도·거리": "v(t)=t^2-4t, t=0, t=5  ·  x=cos t, y=sin t, t=0, t=π  (평면 운동)",
+  "곡선의 길이": "y=(2/3)x^(3/2), x=0, x=3  ·  x=…, y=…, t=a, t=b",
+  접선: "y=e^x, x=0  ·  y=e^x, (1, e)",
+  극값: "y=x^3-3x  (구간이 있으면 x=a, x=b 도 함께)",
+  변곡점: "y=x^3-3x^2",
+}

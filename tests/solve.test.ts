@@ -112,3 +112,41 @@ test("교과서 표기로 다듬기", () => {
   assert.equal(tex(String.raw`-(\cos(x)x^2)`), String.raw`-x^2\cos x`)
   assert.equal(tex(String.raw`\sin(x)\exponentialE^{x}`), String.raw`e^{x}\sin x`)
 })
+
+test("활용 문제: 넓이·부피·거리·길이·접선·극값·변곡점", async () => {
+  const { analyzeWith } = await import("../src/lib/calc2.ts")
+  const go = (latex: string, purpose: Parameters<typeof analyzeWith>[1]) => {
+    const a = analyzeWith(latex, purpose)
+    const r = solve(ce, latex, a.methods.map((m) => m.name), a.topic)
+    assert.ok(r.ok, `${latex}: ${!r.ok ? r.reason : ""}`)
+    return r.solution
+  }
+  const area = (l: string) => valueOf(go(l, ["넓이"]).answer)
+  assert.ok(near(area(String.raw`y=x^2,\;y=x`), 1 / 6))
+  assert.ok(near(area(String.raw`y=e^{x},\;x=0,\;x=1`), Math.E - 1))
+  assert.ok(near(area(String.raw`y=x^2-1`), 4 / 3))
+  assert.ok(near(area(String.raw`y=x^3-x`), 1 / 2)) // 위아래가 바뀌는 구간을 나눠서 더함
+  assert.ok(near(area(String.raw`y=\sin x,\;x=0,\;x=2\pi`), 4))
+  assert.ok(go(String.raw`y=x^2,\;y=x`, ["넓이"]).check, "넓이 검산")
+
+  assert.ok(near(valueOf(go(String.raw`S(x)=x^2,\;x=0,\;x=3`, ["부피"]).answer), 9))
+
+  const d = go(String.raw`v(t)=t^2-4t,\;t=0,\;t=5`, ["속도·거리"])
+  assert.ok(near(valueOf(d.answer), 13))
+  assert.ok(d.steps.some((s) => s.latex?.includes("t=4")), "방향이 바뀌는 시각")
+  assert.ok(near(valueOf(go(String.raw`x=\cos t,\;y=\sin t,\;t=0,\;t=\pi`, ["속도·거리"]).answer), Math.PI))
+
+  assert.equal(go(String.raw`y=\frac{2}{3}x^{\frac{3}{2}},\;x=0,\;x=3`, ["곡선의 길이"]).answer, String.raw`\frac{14}{3}`)
+
+  assert.equal(go(String.raw`y=e^{x},\;x=0`, ["접선"]).answer, "y=x+1")
+  assert.ok(go(String.raw`y=e^{x},\;(1,e)`, ["접선"]).check?.text.includes("곡선 위"))
+
+  const ex = go(String.raw`y=x^3-3x`, ["극값"]).answer
+  assert.ok(ex.includes("극댓값 }f(-1)=2") && ex.includes("극솟값 }f(1)=-2"), ex)
+  assert.equal(go(String.raw`y=x^3-3x^2`, ["변곡점"]).answer, String.raw`\left(1,\ -2\right)`)
+  // 조건이 모자라면 무엇을 더 넣어야 하는지 알려 줌
+  const a = analyzeWith(String.raw`S(x)=x^2`, ["부피"])
+  const r = solve(ce, String.raw`S(x)=x^2`, a.methods.map((m) => m.name), a.topic)
+  assert.equal(r.ok, false)
+  assert.ok(!r.ok && r.reason.includes("x=a"))
+})

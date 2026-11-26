@@ -8,12 +8,13 @@
  * - 이 파일은 웹 워커(solve.worker.ts) 안에서 돌아서, 계산이 오래 걸려도 화면이 멈추지 않는다.
  */
 import type { ComputeEngine, Expression as CEExpression } from "@cortex-js/compute-engine"
+import { solveApplied } from "./applied.ts"
 
 /**
  * CE 의 기본 Expression 타입에는 ops·symbol 이 없고 하위 타입(함수식·기호)에만 있다.
  * 실제 객체에는 항상 있으므로(테스트로 확인), 여기서는 선택 속성으로 붙여 쓴다.
  */
-type Expression = CEExpression & {
+export type Expression = CEExpression & {
   readonly ops?: Expression[]
   readonly symbol?: string
   readonly isNumberLiteral?: boolean
@@ -42,7 +43,7 @@ export type Solution = {
 
 export type SolveResult = { ok: true; solution: Solution } | { ok: false; reason: string }
 
-const CANNOT = "이 식은 자동으로 계산하지 못했습니다. 위의 접근법을 참고해 직접 풀어 보세요."
+export const CANNOT = "이 식은 자동으로 계산하지 못했습니다. 위의 접근법을 참고해 직접 풀어 보세요."
 
 // ───────────────────────── 공통 도구 ─────────────────────────
 
@@ -87,12 +88,12 @@ export function tex(e: Expression | string): string {
 }
 
 /** 적분 기호 안에 넣을 식: 덧셈·뺄셈이면 괄호로 묶는다 */
-function integrand(e: Expression) {
+export function integrand(e: Expression) {
   return e.operator === "Add" || e.operator === "Subtract" ? `\\left(${tex(e)}\\right)` : tex(e)
 }
 
 /** 계산이 끝나지 않고 그대로 남았는지 (예: ∫ 가 안 풀림) */
-function unsolved(e: Expression | null | undefined, ops: string[]) {
+export function unsolved(e: Expression | null | undefined, ops: string[]) {
   if (!e) return true
   const json = JSON.stringify(e.json)
   return ops.some((op) => json.includes(`"${op}"`)) || /NaN|Nothing|Undefined|ComplexInfinity|Indeterminate/.test(json)
@@ -112,7 +113,7 @@ function numericallyEqual(ce: ComputeEngine, a: Expression, b: Expression, v: st
 }
 
 /** 숫자 근삿값 문자열 (정수·간단한 값이면 생략) */
-function approxOf(e: Expression): string | undefined {
+export function approxOf(e: Expression): string | undefined {
   const n = Number(e.N().re)
   if (!Number.isFinite(n)) return undefined
   if (Number.isInteger(n) && e.isNumberLiteral) return undefined
@@ -121,7 +122,7 @@ function approxOf(e: Expression): string | undefined {
   return `≈ ${r}`
 }
 
-class Calc {
+export class Calc {
   readonly ce: ComputeEngine
   constructor(ce: ComputeEngine) {
     this.ce = ce
@@ -688,6 +689,14 @@ export function solve(ce: ComputeEngine, latex: string, methods: string[], topic
     return { ok: false, reason: "식을 읽지 못했습니다." }
   }
   if (!e.isValid) return { ok: false, reason: "식에 빠진 부분이 있습니다. 빈칸(□)을 모두 채워 주세요." }
+
+  // 넓이·부피·거리·길이·접선·극값·변곡점 같은 활용 문제 (목적 버튼으로 고른 경우)
+  try {
+    const applied = solveApplied(c, e, methods)
+    if (applied) return applied
+  } catch {
+    return { ok: false, reason: CANNOT }
+  }
 
   try {
     const op = e.operator

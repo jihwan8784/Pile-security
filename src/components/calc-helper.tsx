@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react"
 import type { MathfieldElement } from "mathlive"
 import { CircleCheck, Lightbulb, LoaderCircle, Sparkles, TriangleAlert } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { EXAMPLES, PURPOSES, analyzeWith, type Analysis, type Purpose } from "@/lib/calc2"
+import { EXAMPLES, PURPOSES, PURPOSE_HINTS, analyzeWith, type Analysis, type Purpose } from "@/lib/calc2"
 import type { SolveResult } from "@/lib/solve"
 import type { SolveRequest, SolveResponse } from "@/lib/solve.worker"
 
@@ -226,6 +226,13 @@ export function CalcHelper({ active }: { active: boolean }) {
             )
           })}
         </div>
+        {purposes.length > 0 && (
+          <p className="text-sm leading-6 text-muted-foreground">
+            <span className="font-medium text-foreground">입력 예</span> · {PURPOSE_HINTS[purposes[purposes.length - 1]]}
+            <br />
+            조건은 쉼표(,)로 이어 쓰면 됩니다.
+          </p>
+        )}
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
@@ -372,8 +379,10 @@ function SolutionView({ solving, ml }: { solving: Solving; ml: MathLive | null }
               <div className="min-w-0">
                 <p className="text-[0.95rem] leading-7">{st.text}</p>
                 {st.latex && (
-                  <div className="mt-1.5 overflow-x-auto rounded-md bg-muted/70 px-3 py-2.5">
-                    <Formula latex={st.latex} ml={ml} />
+                  <div className="mt-1.5 space-y-1.5 overflow-x-auto rounded-md bg-muted/70 px-3 py-2.5">
+                    {st.latex.split("\n").map((line, j) => (
+                      <Formula key={j} latex={line} ml={ml} />
+                    ))}
                   </div>
                 )}
               </div>
